@@ -17,3 +17,7 @@
 * {
     font-family: "Poppins", sans-serif;
 }
+
+a.active {
+    color: #d72050;
+}
