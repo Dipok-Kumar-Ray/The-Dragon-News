@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useLoaderData, useParams } from 'react-router';
+import NewsCard from '../Components/NewsCard';
 
 const CategoryNews = () => {
-    const {id} = useParams();
+    const {id} = useParams();   //string value
     const data = useLoaderData();
     
     const [categoryNews, setCategoryNews] = useState([])
@@ -20,14 +21,19 @@ const CategoryNews = () => {
         }
         else{
             const filterdNews =  data.filter((news) =>news.category_id == id);
-        console.log(filterdNews);
-        }
+            setCategoryNews(filterdNews);}
 
         setCategoryNews
-    }, [data, id])
+    }, [id, data])
     return (
         <div>
-            <h2>Total : {categoryNews.length} News Found</h2>
+            <h2 className='font-bold mt-5'>Total : <span className='text-secondary'>{categoryNews.length}</span> News Found</h2>
+            <div className='grid grid-cols-1  gap-5 mt-5'>
+                {
+                    categoryNews.map((news) => (<NewsCard key={news.id} news={news}></NewsCard>))
+                }
+
+            </div>
         </div>
     );
 };
