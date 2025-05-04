@@ -1,7 +1,10 @@
 import React from 'react';
 import { Link } from 'react-router';
+import { useContext } from 'react';
+import { AuthContext } from '../provider/AuthProvider';
 
 const Register = () => {
+  const  {createUser, setUser} = useContext(AuthContext);
   const handleRegister = e =>{
     e.preventDefault();
     const form = e.target;
@@ -10,7 +13,21 @@ const Register = () => {
     const password = form.password.value;
     const photo = form.photo.value;
     console.log(name, email, password, photo);
+
+    createUser(email, password)
+    .then(result =>{
+      console.log(result.user);
+      const user = result.user;
+      setUser(user)
+    })
+
+    .catch(error =>{
+      console.log(error.message);
+      // const errorMessage = error.message;
+      // alert(errorMessage)
+    })
   }
+
     return (
         <div>
              <div className="mx-auto card bg-base-100 w-full max-w-sm shrink-0 shadow-2xl">
@@ -25,7 +42,7 @@ const Register = () => {
             <input type="text" name='name' className="input" placeholder="Enter your name" />
             {/* photo URL */}
             <label className="label">Photo URL :</label>
-            <input type="email"  name='photo' className="input" placeholder="Photo URL" />
+            <input type="text"  name='photo' className="input" placeholder="Photo URL" />
             {/* email */}
             <label className="label">Email :</label>
             <input type="email" name='email' className="input" placeholder="Enter your Email" />

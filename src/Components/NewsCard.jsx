@@ -1,9 +1,11 @@
 import { FaStar, FaEye, FaRegBookmark, FaCreativeCommonsShare } from 'react-icons/fa';
 import { CiShare2 } from "react-icons/ci";
+import { Link } from 'react-router';
 
 
 const NewsCard = ({ news }) => {
   const {
+    id,
     title,
     rating,
     total_view,
@@ -41,7 +43,7 @@ const NewsCard = ({ news }) => {
         <p>
           {details.length > 200 ? details.slice(0, 200) + '...' : details}
         </p>
-        <span className="text-blue-600 font-medium cursor-pointer">Read More</span>
+        <Link to={`/news-details/${id}`} className="text-blue-600 font-medium cursor-pointer">Read More</Link>
 
         <div className="card-actions mt-4 flex justify-between items-center">
           <div className="flex items-center gap-2 text-orange-500">
