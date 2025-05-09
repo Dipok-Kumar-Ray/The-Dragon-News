@@ -13,7 +13,7 @@ const AuthProvider = ({children}) => {
 
 
     const createUser = (email, password) => {
-        setLoading(true); // ✅ এখানে setLoading হওয়া উচিত
+        setLoading(true); 
         return createUserWithEmailAndPassword(auth, email, password)        
     };
 
@@ -31,24 +31,13 @@ const AuthProvider = ({children}) => {
     useEffect(() => { 
         const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
           setUser(currentUser);
-          setLoading(false); // ✅ এখানে setLoading হওয়া উচিত
+          setLoading(false); 
         });
       
         return () => {
-          unsubscribe(); // শুধু unmount এর সময়
+          unsubscribe(); 
         };
       }, []);
-      
-
-    // useEffect(()=>{ 
-    //   const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-    //         setUser(currentUser)
-    //     });
-    //     return () => {
-    //         unsubscribe();
-    //         setLoading(false)
-    //     }
-    // },[])
 
 
     const  authData = {
@@ -57,6 +46,7 @@ const AuthProvider = ({children}) => {
         createUser,
         logOUt,
         signIn,
+        loading,
         setLoading
     }
     // return <AuthContext value={authData}>
