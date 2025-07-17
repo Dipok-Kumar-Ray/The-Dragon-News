@@ -1,0 +1,27 @@
+{
+  "name": "mern-google-docs-reader",
+  "version": "1.0.0",
+  "description": "MERN Stack application for reading Google Docs using Google Docs API",
+  "main": "server.js",
+  "scripts": {
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "server": "cd backend && npm run dev",
+    "client": "cd frontend && npm start",
+    "build": "cd frontend && npm run build",
+    "heroku-postbuild": "cd frontend && npm install && npm run build"
+  },
+  "keywords": [
+    "mern",
+    "google-docs",
+    "api",
+    "react",
+    "node",
+    "express",
+    "mongodb"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^7.6.0"
+  }
+}
