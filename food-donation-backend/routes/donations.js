@@ -1,420 +1,275 @@
 const express = require('express');
-const { body, query, param } = require('express-validator');
-const auth = require('../middleware/auth');
-const roleAuth = require('../middleware/roleAuth');
+const { body, query } = require('express-validator');
+const router = express.Router();
 const {
+  createDonation,
   getAllDonations,
   getDonationById,
-  requestDonation,
+  updateDonation,
+  deleteDonation,
+  getDonationsByRestaurant,
+  addToFavorites,
+  removeFromFavorites,
+  getFavorites,
   updateDonationStatus,
-  getDonationStats,
-  createDonation
+  getDonationStatistics,
+  searchNearby,
+  getTrendingDonations
 } = require('../controllers/donationsController');
+const { auth, authorize, optionalAuth } = require('../middleware/auth');
 
-const router = express.Router();
-
-// Validation schemas
-const donationValidation = [
+// Validation rules
+const createDonationValidation = [
   body('title')
     .trim()
-    .isLength({ min: 3, max: 100 })
-    .withMessage('শিরোনাম ৩-১০০ অক্ষরের মধ্যে হতে হবে'),
+    .isLength({ min: 5, max: 100 })
+    .withMessage('Title must be between 5 and 100 characters'),
   body('description')
     .trim()
     .isLength({ min: 10, max: 1000 })
-    .withMessage('বিবরণ ১০-১০০০ অক্ষরের মধ্যে হতে হবে'),
+    .withMessage('Description must be between 10 and 1000 characters'),
   body('foodType')
+    .isIn(['cooked', 'raw', 'packaged', 'fruits', 'vegetables', 'dairy', 'beverages', 'others'])
+    .withMessage('Invalid food type'),
+  body('cuisine')
+    .optional()
+    .isIn(['bengali', 'indian', 'chinese', 'continental', 'fast-food', 'desserts', 'mixed', 'others'])
+    .withMessage('Invalid cuisine type'),
+  body('quantity.value')
+    .isInt({ min: 1 })
+    .withMessage('Quantity value must be a positive integer'),
+  body('quantity.unit')
+    .isIn(['people', 'kg', 'pieces', 'plates', 'boxes', 'packets'])
+    .withMessage('Invalid quantity unit'),
+  body('location.address')
     .trim()
-    .isLength({ min: 2, max: 50 })
-    .withMessage('খাবারের ধরন ২-৫০ অক্ষরের মধ্যে হতে হবে'),
-  body('quantity')
+    .notEmpty()
+    .withMessage('Address is required'),
+  body('location.coordinates')
+    .isArray({ min: 2, max: 2 })
+    .withMessage('Coordinates must be an array with longitude and latitude'),
+  body('location.coordinates.*')
+    .isFloat()
+    .withMessage('Coordinates must be valid numbers'),
+  body('location.city')
     .trim()
-    .isLength({ min: 1, max: 50 })
-    .withMessage('পরিমাণ ১-৫০ অক্ষরের মধ্যে হতে হবে'),
-  body('location')
-    .trim()
-    .isLength({ min: 5, max: 200 })
-    .withMessage('অবস্থান ৫-২০০ অক্ষরের মধ্যে হতে হবে'),
-  body('pickupTimeStart')
+    .notEmpty()
+    .withMessage('City is required'),
+  body('availability.startTime')
     .isISO8601()
-    .withMessage('পিকআপ শুরুর সময় সঠিক ফরম্যাটে দিন')
+    .withMessage('Start time must be a valid date')
     .custom((value) => {
       if (new Date(value) <= new Date()) {
-        throw new Error('পিকআপ শুরুর সময় ভবিষ্যতে হতে হবে');
+        throw new Error('Start time must be in the future');
       }
       return true;
     }),
-  body('pickupTimeEnd')
+  body('availability.endTime')
     .isISO8601()
-    .withMessage('পিকআপ শেষের সময় সঠিক ফরম্যাটে দিন')
+    .withMessage('End time must be a valid date')
     .custom((value, { req }) => {
-      if (new Date(value) <= new Date(req.body.pickupTimeStart)) {
-        throw new Error('পিকআপ শেষের সময় শুরুর সময়ের পরে হতে হবে');
+      if (new Date(value) <= new Date(req.body.availability.startTime)) {
+        throw new Error('End time must be after start time');
       }
       return true;
     }),
+  body('shelfLife.hours')
+    .isInt({ min: 1 })
+    .withMessage('Shelf life must be at least 1 hour'),
+  body('priority')
+    .optional()
+    .isIn(['low', 'medium', 'high', 'urgent'])
+    .withMessage('Invalid priority level'),
+  body('temperature')
+    .optional()
+    .isIn(['hot', 'warm', 'room-temperature', 'cold', 'frozen'])
+    .withMessage('Invalid temperature type'),
+  body('packaging')
+    .optional()
+    .isIn(['containers', 'wrapped', 'sealed', 'open', 'bulk'])
+    .withMessage('Invalid packaging type'),
   body('pickupInstructions')
     .optional()
     .trim()
     .isLength({ max: 500 })
-    .withMessage('পিকআপ নির্দেশনা সর্বোচ্চ ৫০০ অক্ষরের হতে পারে'),
-  body('image')
+    .withMessage('Pickup instructions cannot exceed 500 characters'),
+  body('safetyNotes')
     .optional()
-    .isURL()
-    .withMessage('ছবির URL সঠিক ফরম্যাটে দিন')
-];
-
-const requestValidation = [
-  body('donationId')
-    .isMongoId()
-    .withMessage('অবৈধ ডোনেশন ID'),
-  body('requestDescription')
     .trim()
-    .isLength({ min: 10, max: 500 })
-    .withMessage('রিকুয়েস্টের বিবরণ ১০-৫০০ অক্ষরের মধ্যে হতে হবে'),
-  body('pickupTime')
-    .isISO8601()
-    .withMessage('পিকআপ সময় সঠিক ফরম্যাটে দিন')
-    .custom((value) => {
-      if (new Date(value) <= new Date()) {
-        throw new Error('পিকআপ সময় ভবিষ্যতে হতে হবে');
-      }
-      return true;
-    })
+    .isLength({ max: 300 })
+    .withMessage('Safety notes cannot exceed 300 characters')
 ];
 
-const statusUpdateValidation = [
-  param('id')
-    .isMongoId()
-    .withMessage('অবৈধ ডোনেশন ID'),
+const updateDonationValidation = [
+  body('title')
+    .optional()
+    .trim()
+    .isLength({ min: 5, max: 100 })
+    .withMessage('Title must be between 5 and 100 characters'),
+  body('description')
+    .optional()
+    .trim()
+    .isLength({ min: 10, max: 1000 })
+    .withMessage('Description must be between 10 and 1000 characters'),
+  body('pickupInstructions')
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage('Pickup instructions cannot exceed 500 characters'),
+  body('priority')
+    .optional()
+    .isIn(['low', 'medium', 'high', 'urgent'])
+    .withMessage('Invalid priority level'),
   body('status')
-    .isIn(['available', 'requested', 'accepted', 'picked_up', 'expired'])
-    .withMessage('অবৈধ স্ট্যাটাস')
+    .optional()
+    .isIn(['pending', 'approved', 'available', 'requested', 'confirmed', 'picked-up', 'completed', 'expired', 'cancelled'])
+    .withMessage('Invalid status')
 ];
 
-const queryValidation = [
+const getAllDonationsValidation = [
   query('page')
     .optional()
     .isInt({ min: 1 })
-    .withMessage('পেইজ নম্বর ১ বা তার বেশি হতে হবে'),
+    .withMessage('Page must be a positive integer'),
   query('limit')
     .optional()
-    .isInt({ min: 1, max: 100 })
-    .withMessage('লিমিট ১-১০০ এর মধ্যে হতে হবে'),
+    .isInt({ min: 1, max: 50 })
+    .withMessage('Limit must be between 1 and 50'),
+  query('search')
+    .optional()
+    .trim()
+    .isLength({ max: 100 })
+    .withMessage('Search term cannot exceed 100 characters'),
+  query('foodType')
+    .optional()
+    .isIn(['cooked', 'raw', 'packaged', 'fruits', 'vegetables', 'dairy', 'beverages', 'others'])
+    .withMessage('Invalid food type'),
+  query('status')
+    .optional()
+    .isIn(['pending', 'approved', 'available', 'requested', 'confirmed', 'picked-up', 'completed', 'expired', 'cancelled'])
+    .withMessage('Invalid status'),
   query('sortBy')
     .optional()
-    .isIn(['createdAt', 'updatedAt', 'pickupTimeStart', 'quantity', 'title', 'restaurantName'])
-    .withMessage('অবৈধ সর্ট ফিল্ড'),
+    .isIn(['createdAt', 'title', 'quantity.value', 'availability.startTime', 'views'])
+    .withMessage('Invalid sort field'),
   query('sortOrder')
     .optional()
     .isIn(['asc', 'desc'])
-    .withMessage('সর্ট অর্ডার asc বা desc হতে হবে'),
-  query('status')
+    .withMessage('Sort order must be asc or desc'),
+  query('latitude')
     .optional()
-    .isIn(['all', 'available', 'requested', 'accepted', 'picked_up', 'expired'])
-    .withMessage('অবৈধ স্ট্যাটাস ফিল্টার')
+    .isFloat({ min: -90, max: 90 })
+    .withMessage('Latitude must be between -90 and 90'),
+  query('longitude')
+    .optional()
+    .isFloat({ min: -180, max: 180 })
+    .withMessage('Longitude must be between -180 and 180'),
+  query('maxDistance')
+    .optional()
+    .isInt({ min: 100, max: 100000 })
+    .withMessage('Max distance must be between 100 and 100000 meters'),
+  query('minQuantity')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('Minimum quantity must be a positive integer'),
+  query('maxQuantity')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('Maximum quantity must be a positive integer')
 ];
 
-// @route   GET /api/donations
-// @desc    Get all donations with search, filter, sort, and pagination
-// @access  Private
-router.get('/', 
-  auth, 
-  queryValidation,
-  getAllDonations
-);
-
-// @route   GET /api/donations/stats
-// @desc    Get donation statistics
-// @access  Private (Restaurant, Admin)
-router.get('/stats',
-  auth,
-  roleAuth(['restaurant', 'admin']),
-  query('timeRange')
+const updateStatusValidation = [
+  body('status')
+    .isIn(['pending', 'approved', 'available', 'requested', 'confirmed', 'picked-up', 'completed', 'expired', 'cancelled'])
+    .withMessage('Invalid status'),
+  body('userId')
     .optional()
-    .isIn(['week', 'month', 'quarter', 'year'])
-    .withMessage('অবৈধ সময়সীমা'),
-  getDonationStats
-);
+    .isMongoId()
+    .withMessage('Invalid user ID')
+];
 
-// @route   GET /api/donations/:id
-// @desc    Get single donation by ID
-// @access  Private
-router.get('/:id',
-  auth,
-  param('id').isMongoId().withMessage('অবৈধ ডোনেশন ID'),
-  getDonationById
-);
+const searchNearbyValidation = [
+  query('latitude')
+    .isFloat({ min: -90, max: 90 })
+    .withMessage('Latitude is required and must be between -90 and 90'),
+  query('longitude')
+    .isFloat({ min: -180, max: 180 })
+    .withMessage('Longitude is required and must be between -180 and 180'),
+  query('maxDistance')
+    .optional()
+    .isInt({ min: 100, max: 100000 })
+    .withMessage('Max distance must be between 100 and 100000 meters'),
+  query('limit')
+    .optional()
+    .isInt({ min: 1, max: 50 })
+    .withMessage('Limit must be between 1 and 50')
+];
+
+// Routes
 
 // @route   POST /api/donations
-// @desc    Create a new donation
+// @desc    Create new donation
 // @access  Private (Restaurant only)
-router.post('/',
-  auth,
-  roleAuth(['restaurant']),
-  donationValidation,
-  createDonation
-);
+router.post('/', auth, authorize('restaurant'), createDonationValidation, createDonation);
 
-// @route   POST /api/donations/request
-// @desc    Request a donation
-// @access  Private (Charity only)
-router.post('/request',
-  auth,
-  roleAuth(['charity']),
-  requestValidation,
-  requestDonation
-);
+// @route   GET /api/donations
+// @desc    Get all donations with filters
+// @access  Public
+router.get('/', optionalAuth, getAllDonationsValidation, getAllDonations);
 
-// @route   PATCH /api/donations/:id/status
-// @desc    Update donation status
-// @access  Private (Restaurant, Charity, Admin)
-router.patch('/:id/status',
-  auth,
-  statusUpdateValidation,
-  updateDonationStatus
-);
+// @route   GET /api/donations/trending
+// @desc    Get trending donations
+// @access  Public
+router.get('/trending', optionalAuth, getTrendingDonations);
+
+// @route   GET /api/donations/nearby
+// @desc    Search donations nearby
+// @access  Public
+router.get('/nearby', searchNearbyValidation, searchNearby);
+
+// @route   GET /api/donations/restaurant
+// @desc    Get donations by restaurant
+// @access  Private (Restaurant only)
+router.get('/restaurant', auth, authorize('restaurant'), getDonationsByRestaurant);
+
+// @route   GET /api/donations/favorites
+// @desc    Get user's favorite donations
+// @access  Private
+router.get('/favorites', auth, getFavorites);
+
+// @route   GET /api/donations/statistics
+// @desc    Get donation statistics
+// @access  Private (Restaurant/Admin only)
+router.get('/statistics', auth, authorize('restaurant', 'admin'), getDonationStatistics);
+
+// @route   GET /api/donations/:id
+// @desc    Get donation by ID
+// @access  Public
+router.get('/:id', optionalAuth, getDonationById);
 
 // @route   PUT /api/donations/:id
-// @desc    Update donation details
-// @access  Private (Restaurant only - own donations, Admin)
-const updateDonation = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const userId = req.user.id;
-    const userRole = req.user.role;
-
-    // Find donation
-    const donation = await Donation.findById(id);
-    if (!donation) {
-      return res.status(404).json({
-        success: false,
-        message: 'ডোনেশন খুঁজে পাওয়া যায়নি'
-      });
-    }
-
-    // Check permissions
-    if (userRole === 'restaurant' && donation.restaurantId.toString() !== userId) {
-      return res.status(403).json({
-        success: false,
-        message: 'আপনি শুধুমাত্র নিজের ডোনেশন আপডেট করতে পারেন'
-      });
-    }
-
-    // Don't allow updating if donation has requests
-    if (donation.status !== 'available' && donation.status !== 'pending') {
-      return res.status(400).json({
-        success: false,
-        message: 'এই ডোনেশনে ইতিমধ্যে রিকুয়েস্ট আছে, আপডেট করা যাবে না'
-      });
-    }
-
-    const updatedDonation = await Donation.findByIdAndUpdate(
-      id,
-      { ...req.body, updatedAt: new Date() },
-      { new: true, runValidators: true }
-    );
-
-    res.json({
-      success: true,
-      message: 'ডোনেশন আপডেট হয়েছে',
-      donation: updatedDonation
-    });
-
-  } catch (error) {
-    console.error('Error updating donation:', error);
-    res.status(500).json({
-      success: false,
-      message: 'ডোনেশন আপডেট করতে সমস্যা হয়েছে'
-    });
-  }
-};
-
-router.put('/:id',
-  auth,
-  roleAuth(['restaurant', 'admin']),
-  param('id').isMongoId().withMessage('অবৈধ ডোনেশন ID'),
-  donationValidation,
-  updateDonation
-);
+// @desc    Update donation
+// @access  Private (Restaurant owner or Admin)
+router.put('/:id', auth, updateDonationValidation, updateDonation);
 
 // @route   DELETE /api/donations/:id
 // @desc    Delete donation
-// @access  Private (Restaurant only - own donations, Admin)
-const deleteDonation = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const userId = req.user.id;
-    const userRole = req.user.role;
+// @access  Private (Restaurant owner or Admin)
+router.delete('/:id', auth, deleteDonation);
 
-    // Find donation
-    const donation = await Donation.findById(id);
-    if (!donation) {
-      return res.status(404).json({
-        success: false,
-        message: 'ডোনেশন খুঁজে পাওয়া যায়নি'
-      });
-    }
-
-    // Check permissions
-    if (userRole === 'restaurant' && donation.restaurantId.toString() !== userId) {
-      return res.status(403).json({
-        success: false,
-        message: 'আপনি শুধুমাত্র নিজের ডোনেশন মুছতে পারেন'
-      });
-    }
-
-    // Don't allow deleting if donation has active requests
-    if (['requested', 'accepted', 'picked_up'].includes(donation.status)) {
-      return res.status(400).json({
-        success: false,
-        message: 'সক্রিয় রিকুয়েস্ট থাকায় এই ডোনেশন মুছা যাবে না'
-      });
-    }
-
-    await Donation.findByIdAndDelete(id);
-
-    res.json({
-      success: true,
-      message: 'ডোনেশন মুছে ফেলা হয়েছে'
-    });
-
-  } catch (error) {
-    console.error('Error deleting donation:', error);
-    res.status(500).json({
-      success: false,
-      message: 'ডোনেশন মুছতে সমস্যা হয়েছে'
-    });
-  }
-};
-
-router.delete('/:id',
-  auth,
-  roleAuth(['restaurant', 'admin']),
-  param('id').isMongoId().withMessage('অবৈধ ডোনেশন ID'),
-  deleteDonation
-);
-
-// @route   GET /api/donations/restaurant/:restaurantId
-// @desc    Get donations by restaurant
+// @route   POST /api/donations/:id/favorite
+// @desc    Add donation to favorites
 // @access  Private
-router.get('/restaurant/:restaurantId',
-  auth,
-  param('restaurantId').isMongoId().withMessage('অবৈধ রেস্তোরাঁ ID'),
-  queryValidation,
-  async (req, res) => {
-    req.query.restaurantId = req.params.restaurantId;
-    getAllDonations(req, res);
-  }
-);
+router.post('/:id/favorite', auth, addToFavorites);
 
-// @route   GET /api/donations/my/donations
-// @desc    Get current user's donations (for restaurants)
-// @access  Private (Restaurant only)
-router.get('/my/donations',
-  auth,
-  roleAuth(['restaurant']),
-  queryValidation,
-  async (req, res) => {
-    req.query.restaurantId = req.user.id;
-    getAllDonations(req, res);
-  }
-);
-
-// @route   GET /api/donations/my/requests
-// @desc    Get current user's donation requests (for charities)
-// @access  Private (Charity only)
-const getMyRequests = async (req, res) => {
-  try {
-    const {
-      page = 1,
-      limit = 10,
-      status = ''
-    } = req.query;
-
-    const charityId = req.user.id;
-
-    // Build filter
-    const filter = { charityId };
-    if (status && status !== 'all') {
-      filter.status = status;
-    }
-
-    // Calculate pagination
-    const pageNumber = parseInt(page);
-    const limitNumber = parseInt(limit);
-    const skip = (pageNumber - 1) * limitNumber;
-
-    // Get requests with populated donation details
-    const requests = await DonationRequest.find(filter)
-      .populate({
-        path: 'donationId',
-        select: 'title description foodType quantity location restaurantName image pickupTimeStart pickupTimeEnd status',
-        populate: {
-          path: 'restaurantId',
-          select: 'name organizationName email phone'
-        }
-      })
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limitNumber);
-
-    const totalCount = await DonationRequest.countDocuments(filter);
-    const totalPages = Math.ceil(totalCount / limitNumber);
-
-    res.json({
-      success: true,
-      requests,
-      pagination: {
-        currentPage: pageNumber,
-        totalPages,
-        totalCount,
-        limit: limitNumber
-      }
-    });
-
-  } catch (error) {
-    console.error('Error in getMyRequests:', error);
-    res.status(500).json({
-      success: false,
-      message: 'আপনার রিকুয়েস্ট তালিকা পেতে সমস্যা হয়েছে'
-    });
-  }
-};
-
-router.get('/my/requests',
-  auth,
-  roleAuth(['charity']),
-  queryValidation,
-  getMyRequests
-);
-
-// @route   GET /api/donations/search/locations
-// @desc    Get unique locations for search dropdown
+// @route   DELETE /api/donations/:id/favorite
+// @desc    Remove donation from favorites
 // @access  Private
-router.get('/search/locations',
-  auth,
-  async (req, res) => {
-    try {
-      const locations = await Donation.distinct('location', {
-        verified: true,
-        approved: true,
-        status: { $ne: 'expired' }
-      });
+router.delete('/:id/favorite', auth, removeFromFavorites);
 
-      res.json({
-        success: true,
-        locations: locations.filter(location => location && location.trim())
-      });
-
-    } catch (error) {
-      console.error('Error fetching locations:', error);
-      res.status(500).json({
-        success: false,
-        message: 'অবস্থানের তালিকা পেতে সমস্যা হয়েছে'
-      });
-    }
-  }
-);
+// @route   PATCH /api/donations/:id/status
+// @desc    Update donation status
+// @access  Private (Restaurant owner or Admin)
+router.patch('/:id/status', auth, updateStatusValidation, updateDonationStatus);
 
 module.exports = router;

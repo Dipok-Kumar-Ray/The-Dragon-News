@@ -1,433 +1,367 @@
 const mongoose = require('mongoose');
 
 const donationSchema = new mongoose.Schema({
-  // Basic Information
   title: {
     type: String,
-    required: [true, 'ডোনেশনের শিরোনাম প্রয়োজন'],
+    required: [true, 'Donation title is required'],
     trim: true,
-    minlength: [3, 'শিরোনাম কমপক্ষে ৩ অক্ষরের হতে হবে'],
-    maxlength: [100, 'শিরোনাম সর্বোচ্চ ১০০ অক্ষরের হতে পারে']
+    minlength: [5, 'Title must be at least 5 characters'],
+    maxlength: [100, 'Title cannot exceed 100 characters']
   },
-  
   description: {
     type: String,
-    required: [true, 'ডোনেশনের বিবরণ প্রয়োজন'],
+    required: [true, 'Description is required'],
     trim: true,
-    minlength: [10, 'বিবরণ কমপক্ষে ১০ অক্ষরের হতে হবে'],
-    maxlength: [1000, 'বিবরণ সর্বোচ্চ ১০০০ অক্ষরের হতে পারে']
+    minlength: [10, 'Description must be at least 10 characters'],
+    maxlength: [1000, 'Description cannot exceed 1000 characters']
   },
-
-  // Food Details
   foodType: {
     type: String,
-    required: [true, 'খাবারের ধরন উল্লেখ করুন'],
-    trim: true,
-    enum: {
-      values: [
-        'ভাত ও তরকারি',
-        'রুটি ও তরকারি', 
-        'বিরিয়ানি',
-        'পোলাও',
-        'খিচুড়ি',
-        'নুডলস',
-        'পাস্তা',
-        'স্যান্ডউইচ',
-        'বার্গার',
-        'পিৎজা',
-        'সালাদ',
-        'ফল',
-        'মিষ্টি',
-        'বেকারি আইটেম',
-        'পানীয়',
-        'অন্যান্য'
-      ],
-      message: 'অবৈধ খাবারের ধরন'
-    }
+    required: [true, 'Food type is required'],
+    enum: ['cooked', 'raw', 'packaged', 'fruits', 'vegetables', 'dairy', 'beverages', 'others']
   },
-
-  quantity: {
+  cuisine: {
     type: String,
-    required: [true, 'পরিমাণ উল্লেখ করুন'],
-    trim: true,
-    validate: {
-      validator: function(v) {
-        // Accept formats like "10 kg", "5 portions", "20 people", etc.
-        return /^[\d\s]+(kg|কেজি|portions?|জন|লোক|people|টি|টুকরা|pieces?|লিটার|liters?|গ্লাস|glass|কাপ|cups?|প্লেট|plates?)$/i.test(v);
-      },
-      message: 'পরিমাণ সঠিক ফরম্যাটে দিন (যেমন: ১০ কেজি, ৫ জন, ২০ প্লেট)'
+    enum: ['bengali', 'indian', 'chinese', 'continental', 'fast-food', 'desserts', 'mixed', 'others']
+  },
+  quantity: {
+    value: {
+      type: Number,
+      required: [true, 'Quantity value is required'],
+      min: [1, 'Quantity must be at least 1']
+    },
+    unit: {
+      type: String,
+      required: [true, 'Quantity unit is required'],
+      enum: ['people', 'kg', 'pieces', 'plates', 'boxes', 'packets']
     }
   },
-
-  // Restaurant Information
-  restaurantId: {
+  images: [{
+    url: String,
+    alt: String,
+    isPrimary: { type: Boolean, default: false }
+  }],
+  restaurant: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: [true, 'রেস্তোরাঁর তথ্য প্রয়োজন']
+    required: [true, 'Restaurant information is required']
   },
-
-  restaurantName: {
-    type: String,
-    required: [true, 'রেস্তোরাঁর নাম প্রয়োজন'],
-    trim: true
-  },
-
-  // Location
   location: {
-    type: String,
-    required: [true, 'অবস্থান প্রয়োজন'],
-    trim: true,
-    minlength: [5, 'অবস্থান কমপক্ষে ৫ অক্ষরের হতে হবে'],
-    maxlength: [200, 'অবস্থান সর্বোচ্চ ২০০ অক্ষরের হতে পারে']
-  },
-
-  coordinates: {
-    latitude: {
-      type: Number,
-      min: [-90, 'অক্ষাংশ -৯০ থেকে ৯০ এর মধ্যে হতে হবে'],
-      max: [90, 'অক্ষাংশ -৯০ থেকে ৯০ এর মধ্যে হতে হবে']
+    address: {
+      type: String,
+      required: [true, 'Address is required']
     },
-    longitude: {
-      type: Number,
-      min: [-180, 'দ্রাঘিমাংশ -১৮০ থেকে ১৮০ এর মধ্যে হতে হবে'],
-      max: [180, 'দ্রাঘিমাংশ -১৮০ থেকে ১৮০ এর মধ্যে হতে হবে']
+    coordinates: {
+      type: [Number], // [longitude, latitude]
+      required: [true, 'Coordinates are required'],
+      index: '2dsphere'
+    },
+    city: {
+      type: String,
+      required: [true, 'City is required']
+    },
+    area: String,
+    landmark: String
+  },
+  availability: {
+    startTime: {
+      type: Date,
+      required: [true, 'Start time is required']
+    },
+    endTime: {
+      type: Date,
+      required: [true, 'End time is required']
+    },
+    isFlexible: {
+      type: Boolean,
+      default: false
     }
   },
-
-  // Pickup Time Window
-  pickupTimeStart: {
-    type: Date,
-    required: [true, 'পিকআপ শুরুর সময় প্রয়োজন'],
-    validate: {
-      validator: function(v) {
-        return v > new Date();
-      },
-      message: 'পিকআপ শুরুর সময় ভবিষ্যতে হতে হবে'
-    }
-  },
-
-  pickupTimeEnd: {
-    type: Date,
-    required: [true, 'পিকআপ শেষের সময় প্রয়োজন'],
-    validate: {
-      validator: function(v) {
-        return v > this.pickupTimeStart;
-      },
-      message: 'পিকআপ শেষের সময় শুরুর সময়ের পরে হতে হবে'
-    }
-  },
-
   pickupInstructions: {
     type: String,
-    trim: true,
-    maxlength: [500, 'পিকআপ নির্দেশনা সর্বোচ্চ ৫০০ অক্ষরের হতে পারে'],
-    default: ''
+    maxlength: [500, 'Pickup instructions cannot exceed 500 characters']
   },
-
-  // Status Management
   status: {
     type: String,
-    enum: {
-      values: ['pending', 'available', 'requested', 'accepted', 'picked_up', 'expired', 'cancelled'],
-      message: 'অবৈধ স্ট্যাটাস'
-    },
+    enum: ['pending', 'approved', 'available', 'requested', 'confirmed', 'picked-up', 'completed', 'expired', 'cancelled'],
     default: 'pending'
   },
-
-  // Admin Verification
-  verified: {
+  priority: {
+    type: String,
+    enum: ['low', 'medium', 'high', 'urgent'],
+    default: 'medium'
+  },
+  dietary: {
+    vegetarian: { type: Boolean, default: false },
+    vegan: { type: Boolean, default: false },
+    glutenFree: { type: Boolean, default: false },
+    dairyFree: { type: Boolean, default: false },
+    nutFree: { type: Boolean, default: false },
+    halal: { type: Boolean, default: false }
+  },
+  preservationMethod: {
+    type: String,
+    enum: ['fresh', 'refrigerated', 'frozen', 'canned', 'dried'],
+    default: 'fresh'
+  },
+  shelfLife: {
+    hours: {
+      type: Number,
+      required: [true, 'Shelf life is required'],
+      min: [1, 'Shelf life must be at least 1 hour']
+    }
+  },
+  requestedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  confirmedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  pickedUpBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  pickupTime: Date,
+  completedAt: Date,
+  
+  // Tracking and analytics
+  views: {
+    type: Number,
+    default: 0
+  },
+  favorites: [{
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    addedAt: {
+      type: Date,
+      default: Date.now
+    }
+  }],
+  
+  // Quality and safety
+  temperature: {
+    type: String,
+    enum: ['hot', 'warm', 'room-temperature', 'cold', 'frozen']
+  },
+  packaging: {
+    type: String,
+    enum: ['containers', 'wrapped', 'sealed', 'open', 'bulk']
+  },
+  safetyNotes: String,
+  
+  // Admin fields
+  isVerified: {
     type: Boolean,
     default: false
   },
-
-  approved: {
-    type: Boolean,
-    default: false
-  },
-
   verifiedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
-
-  verifiedAt: {
-    type: Date
-  },
-
-  approvedBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  },
-
-  approvedAt: {
-    type: Date
-  },
-
-  // Assignment
-  assignedCharity: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  },
-
-  assignedAt: {
-    type: Date
-  },
-
-  // Image
-  image: {
-    type: String,
-    validate: {
-      validator: function(v) {
-        if (!v) return true; // Optional field
-        return /^https?:\/\/.+\.(jpg|jpeg|png|gif|webp)$/i.test(v);
-      },
-      message: 'ছবির URL সঠিক ফরম্যাটে দিন'
-    }
-  },
-
-  // Contact Information
-  contactInfo: {
-    phone: {
-      type: String,
-      validate: {
-        validator: function(v) {
-          if (!v) return true;
-          return /^(\+88)?01[3-9]\d{8}$/.test(v);
-        },
-        message: 'সঠিক মোবাইল নম্বর দিন'
-      }
-    },
-    email: {
-      type: String,
-      validate: {
-        validator: function(v) {
-          if (!v) return true;
-          return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
-        },
-        message: 'সঠিক ইমেইল ঠিকানা দিন'
-      }
-    },
-    alternateContact: {
-      type: String,
-      maxlength: [100, 'বিকল্প যোগাযোগ সর্বোচ্চ ১০০ অক্ষরের হতে পারে']
-    }
-  },
-
-  // Requests and Reviews
-  requests: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'DonationRequest'
-  }],
-
-  reviews: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Review'
-  }],
-
-  // Analytics
-  viewCount: {
-    type: Number,
-    default: 0
-  },
-
-  favoriteCount: {
-    type: Number,
-    default: 0
-  },
-
-  // Special Instructions
-  allergyInfo: {
-    type: String,
-    maxlength: [200, 'অ্যালার্জি তথ্য সর্বোচ্চ ২০০ অক্ষরের হতে পারে'],
-    trim: true
-  },
-
-  storageInstructions: {
-    type: String,
-    maxlength: [200, 'সংরক্ষণ নির্দেশনা সর্বোচ্চ ২০০ অক্ষরের হতে পারে'],
-    trim: true
-  },
-
+  verifiedAt: Date,
+  rejectionReason: String,
+  
   // Metadata
-  expiresAt: {
-    type: Date,
-    index: { expireAfterSeconds: 0 } // Automatic deletion based on this field
-  },
-
-  pickedUpAt: {
-    type: Date
-  },
-
-  cancelledAt: {
-    type: Date
-  },
-
-  cancellationReason: {
-    type: String,
-    maxlength: [300, 'বাতিলের কারণ সর্বোচ্চ ৩০০ অক্ষরের হতে পারে']
-  },
-
-  // Timestamps
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
-
-  updatedAt: {
-    type: Date,
-    default: Date.now
-  }
+  tags: [String],
+  estimatedValue: Number,
+  servingSize: String
 }, {
   timestamps: true,
   toJSON: { virtuals: true },
   toObject: { virtuals: true }
 });
 
-// Indexes for better performance
-donationSchema.index({ restaurantId: 1, status: 1 });
-donationSchema.index({ location: 'text', title: 'text', description: 'text', foodType: 'text' });
-donationSchema.index({ pickupTimeStart: 1, pickupTimeEnd: 1 });
-donationSchema.index({ verified: 1, approved: 1, status: 1 });
+// Indexes for performance and search
+donationSchema.index({ status: 1 });
+donationSchema.index({ restaurant: 1 });
+donationSchema.index({ foodType: 1 });
+donationSchema.index({ 'location.coordinates': '2dsphere' });
+donationSchema.index({ 'location.city': 1 });
 donationSchema.index({ createdAt: -1 });
-donationSchema.index({ coordinates: '2dsphere' }); // For geospatial queries
+donationSchema.index({ 'availability.startTime': 1 });
+donationSchema.index({ 'availability.endTime': 1 });
+donationSchema.index({ title: 'text', description: 'text' });
 
-// Virtual properties
-donationSchema.virtual('isActive').get(function() {
-  return ['available', 'requested', 'accepted'].includes(this.status) && 
-         new Date() < this.pickupTimeEnd;
+// Compound indexes
+donationSchema.index({ status: 1, 'availability.endTime': 1 });
+donationSchema.index({ 'location.city': 1, status: 1 });
+donationSchema.index({ restaurant: 1, status: 1 });
+
+// Virtual for formatted quantity
+donationSchema.virtual('formattedQuantity').get(function() {
+  return `${this.quantity.value} ${this.quantity.unit}`;
 });
 
-donationSchema.virtual('isExpired').get(function() {
-  return new Date() > this.pickupTimeEnd;
+// Virtual for availability status
+donationSchema.virtual('isAvailable').get(function() {
+  const now = new Date();
+  return this.status === 'available' && 
+         this.availability.endTime > now &&
+         this.availability.startTime <= now;
 });
 
+// Virtual for time remaining
 donationSchema.virtual('timeRemaining').get(function() {
-  if (this.isExpired) return 0;
-  return Math.max(0, this.pickupTimeEnd.getTime() - new Date().getTime());
+  const now = new Date();
+  const timeLeft = this.availability.endTime - now;
+  if (timeLeft <= 0) return 0;
+  return Math.floor(timeLeft / (1000 * 60 * 60)); // hours
 });
 
-donationSchema.virtual('requestCount').get(function() {
-  return this.requests ? this.requests.length : 0;
+// Virtual for primary image
+donationSchema.virtual('primaryImage').get(function() {
+  const primary = this.images.find(img => img.isPrimary);
+  return primary ? primary.url : (this.images[0] ? this.images[0].url : null);
 });
 
-donationSchema.virtual('averageRating').get(function() {
-  if (!this.reviews || this.reviews.length === 0) return 0;
-  // This would need to be populated with actual review data
-  return 0;
+// Virtual for distance (will be added during queries)
+donationSchema.virtual('distance');
+
+// Pre-save middleware
+donationSchema.pre('save', function(next) {
+  // Auto-expire if end time has passed
+  if (this.availability.endTime < new Date() && this.status === 'available') {
+    this.status = 'expired';
+  }
+  
+  // Validate pickup time
+  if (this.pickupTime && this.pickupTime > this.availability.endTime) {
+    const error = new Error('Pickup time cannot be after availability end time');
+    return next(error);
+  }
+  
+  next();
 });
 
 // Instance methods
-donationSchema.methods.incrementViewCount = function() {
-  this.viewCount += 1;
+donationSchema.methods.addToFavorites = function(userId) {
+  const existingFavorite = this.favorites.find(fav => fav.user.toString() === userId.toString());
+  if (!existingFavorite) {
+    this.favorites.push({ user: userId });
+  }
   return this.save();
 };
 
-donationSchema.methods.addToFavorites = function() {
-  this.favoriteCount += 1;
+donationSchema.methods.removeFromFavorites = function(userId) {
+  this.favorites = this.favorites.filter(fav => fav.user.toString() !== userId.toString());
   return this.save();
 };
 
-donationSchema.methods.removeFromFavorites = function() {
-  this.favoriteCount = Math.max(0, this.favoriteCount - 1);
+donationSchema.methods.incrementViews = function() {
+  this.views += 1;
   return this.save();
 };
 
-donationSchema.methods.markAsExpired = function() {
-  this.status = 'expired';
-  this.updatedAt = new Date();
-  return this.save();
+donationSchema.methods.canBeRequestedBy = function(user) {
+  if (!user) return false;
+  if (this.status !== 'available') return false;
+  if (this.restaurant.toString() === user._id.toString()) return false;
+  if (user.role !== 'charity' && user.role !== 'user') return false;
+  return true;
 };
 
-donationSchema.methods.assignToCharity = function(charityId) {
-  this.assignedCharity = charityId;
-  this.assignedAt = new Date();
-  this.status = 'accepted';
-  this.updatedAt = new Date();
-  return this.save();
-};
-
-donationSchema.methods.markAsPickedUp = function() {
-  this.status = 'picked_up';
-  this.pickedUpAt = new Date();
-  this.updatedAt = new Date();
+donationSchema.methods.updateStatus = function(newStatus, userId = null) {
+  this.status = newStatus;
+  
+  switch (newStatus) {
+    case 'requested':
+      this.requestedBy = userId;
+      break;
+    case 'confirmed':
+      this.confirmedBy = userId;
+      break;
+    case 'picked-up':
+      this.pickedUpBy = userId;
+      this.pickupTime = new Date();
+      break;
+    case 'completed':
+      this.completedAt = new Date();
+      break;
+  }
+  
   return this.save();
 };
 
 // Static methods
-donationSchema.statics.findAvailable = function() {
-  return this.find({
+donationSchema.statics.findAvailable = function(filters = {}) {
+  const query = {
     status: 'available',
-    verified: true,
-    approved: true,
-    pickupTimeEnd: { $gt: new Date() }
-  });
+    'availability.endTime': { $gt: new Date() },
+    isVerified: true,
+    ...filters
+  };
+  
+  return this.find(query)
+    .populate('restaurant', 'name restaurantInfo.name address profileImage')
+    .sort({ createdAt: -1 });
 };
 
-donationSchema.statics.findByLocation = function(location, radius = 10) {
-  return this.find({
-    location: { $regex: location, $options: 'i' },
-    verified: true,
-    approved: true,
-    status: { $in: ['available', 'requested'] }
-  });
-};
-
-donationSchema.statics.findExpired = function() {
-  return this.find({
-    $or: [
-      { pickupTimeEnd: { $lt: new Date() } },
-      { status: 'expired' }
-    ]
-  });
-};
-
-donationSchema.statics.getStatsByRestaurant = function(restaurantId, startDate, endDate) {
+donationSchema.statics.findNearby = function(coordinates, maxDistance = 10000, filters = {}) {
   return this.aggregate([
     {
-      $match: {
-        restaurantId: restaurantId,
-        createdAt: {
-          $gte: startDate,
-          $lte: endDate
+      $geoNear: {
+        near: {
+          type: 'Point',
+          coordinates: coordinates
+        },
+        distanceField: 'distance',
+        maxDistance: maxDistance,
+        spherical: true,
+        query: {
+          status: 'available',
+          'availability.endTime': { $gt: new Date() },
+          isVerified: true,
+          ...filters
         }
       }
     },
     {
-      $group: {
-        _id: '$status',
-        count: { $sum: 1 },
-        totalQuantity: { $sum: 1 } // Would need to parse quantity string
+      $lookup: {
+        from: 'users',
+        localField: 'restaurant',
+        foreignField: '_id',
+        as: 'restaurant'
       }
+    },
+    {
+      $unwind: '$restaurant'
+    },
+    {
+      $sort: { distance: 1, createdAt: -1 }
     }
   ]);
 };
 
-// Middleware
-donationSchema.pre('save', function(next) {
-  this.updatedAt = new Date();
+donationSchema.statics.getStatistics = function(restaurantId = null) {
+  const matchStage = restaurantId ? { restaurant: mongoose.Types.ObjectId(restaurantId) } : {};
   
-  // Auto-expire if pickup time has passed
-  if (new Date() > this.pickupTimeEnd && 
-      ['available', 'requested', 'accepted'].includes(this.status)) {
-    this.status = 'expired';
-  }
-  
-  // Set expiry for automatic cleanup (30 days after pickup end time)
-  if (!this.expiresAt) {
-    this.expiresAt = new Date(this.pickupTimeEnd.getTime() + 30 * 24 * 60 * 60 * 1000);
-  }
-  
-  next();
-});
-
-donationSchema.pre('findOneAndUpdate', function(next) {
-  this.set({ updatedAt: new Date() });
-  next();
-});
-
-// Post-save middleware for logging
-donationSchema.post('save', function(doc) {
-  console.log(`Donation ${doc._id} saved with status: ${doc.status}`);
-});
+  return this.aggregate([
+    { $match: matchStage },
+    {
+      $group: {
+        _id: null,
+        totalDonations: { $sum: 1 },
+        totalQuantity: { $sum: '$quantity.value' },
+        activeDonations: {
+          $sum: {
+            $cond: [{ $eq: ['$status', 'available'] }, 1, 0]
+          }
+        },
+        completedDonations: {
+          $sum: {
+            $cond: [{ $eq: ['$status', 'completed'] }, 1, 0]
+          }
+        },
+        averageViews: { $avg: '$views' },
+        totalViews: { $sum: '$views' },
+        totalFavorites: { $sum: { $size: '$favorites' } }
+      }
+    }
+  ]);
+};
 
 module.exports = mongoose.model('Donation', donationSchema);

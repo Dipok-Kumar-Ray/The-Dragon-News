@@ -1,443 +1,260 @@
 import axios from 'axios';
-import { toast } from 'react-hot-toast';
-
-// API Base URL
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+import toast from 'react-hot-toast';
 
 // Create axios instance
-const axiosInstance = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 30000, // 30 seconds timeout
+const api = axios.create({
+  baseURL: process.env.REACT_APP_API_URL || 'http://localhost:5000/api',
+  timeout: 10000,
   headers: {
     'Content-Type': 'application/json',
   },
 });
 
+// Token management utilities
+const getAccessToken = () => localStorage.getItem('accessToken');
+const getRefreshToken = () => localStorage.getItem('refreshToken');
+const setTokens = (accessToken, refreshToken) => {
+  localStorage.setItem('accessToken', accessToken);
+  if (refreshToken) {
+    localStorage.setItem('refreshToken', refreshToken);
+  }
+};
+const clearTokens = () => {
+  localStorage.removeItem('accessToken');
+  localStorage.removeItem('refreshToken');
+  localStorage.removeItem('user');
+};
+
+// Flag to prevent multiple refresh attempts
+let isRefreshing = false;
+let failedQueue = [];
+
+const processQueue = (error, token = null) => {
+  failedQueue.forEach(prom => {
+    if (error) {
+      prom.reject(error);
+    } else {
+      prom.resolve(token);
+    }
+  });
+  
+  failedQueue = [];
+};
+
 // Request interceptor
-axiosInstance.interceptors.request.use(
+api.interceptors.request.use(
   (config) => {
-    // Add auth token to requests
-    const token = localStorage.getItem('token');
+    const token = getAccessToken();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
-
+    
     // Add request timestamp for debugging
     config.metadata = { startTime: new Date() };
-
-    // Log request in development
-    if (process.env.NODE_ENV === 'development') {
-      console.log('🚀 API Request:', {
-        method: config.method?.toUpperCase(),
-        url: config.url,
-        data: config.data,
-        params: config.params,
-      });
-    }
-
+    
     return config;
   },
   (error) => {
-    console.error('Request interceptor error:', error);
     return Promise.reject(error);
   }
 );
 
 // Response interceptor
-axiosInstance.interceptors.response.use(
+api.interceptors.response.use(
   (response) => {
-    // Calculate request duration
+    // Calculate request duration for debugging
     const endTime = new Date();
     const duration = endTime - response.config.metadata.startTime;
-
-    // Log response in development
-    if (process.env.NODE_ENV === 'development') {
-      console.log('✅ API Response:', {
-        method: response.config.method?.toUpperCase(),
-        url: response.config.url,
-        status: response.status,
-        duration: `${duration}ms`,
-        data: response.data,
-      });
-    }
-
-    // Return response data if successful
+    console.log(`Request to ${response.config.url} took ${duration}ms`);
+    
     return response;
   },
   async (error) => {
-    const { config, response } = error;
-
-    // Calculate request duration for failed requests
-    if (config?.metadata?.startTime) {
-      const endTime = new Date();
-      const duration = endTime - config.metadata.startTime;
-      console.error('❌ API Error:', {
-        method: config.method?.toUpperCase(),
-        url: config.url,
-        status: response?.status,
-        duration: `${duration}ms`,
-        error: response?.data || error.message,
-      });
+    const originalRequest = error.config;
+    
+    // Handle network errors
+    if (!error.response) {
+      const networkError = 'নেটওয়ার্ক সংযোগে সমস্যা। ইন্টারনেট সংযোগ পরীক্ষা করুন।';
+      toast.error(networkError);
+      return Promise.reject(new Error(networkError));
     }
-
-    // Handle different error status codes
-    if (response) {
-      const { status, data } = response;
-
-      switch (status) {
-        case 400:
-          // Bad Request
-          handleBadRequest(data);
-          break;
-
-        case 401:
-          // Unauthorized - Try to refresh token
-          return handleUnauthorized(config, error);
-
-        case 403:
-          // Forbidden
-          handleForbidden(data);
-          break;
-
-        case 404:
-          // Not Found
-          handleNotFound(data);
-          break;
-
-        case 409:
-          // Conflict
-          handleConflict(data);
-          break;
-
-        case 422:
-          // Validation Error
-          handleValidationError(data);
-          break;
-
-        case 429:
-          // Too Many Requests
-          handleTooManyRequests(data);
-          break;
-
-        case 500:
-        case 502:
-        case 503:
-        case 504:
-          // Server Errors
-          handleServerError(status, data);
-          break;
-
-        default:
-          // Generic error handling
-          handleGenericError(status, data);
+    
+    const { status, data } = error.response;
+    
+    // Handle 401 Unauthorized - Token expired or invalid
+    if (status === 401 && !originalRequest._retry) {
+      if (isRefreshing) {
+        // Add failed request to queue
+        return new Promise((resolve, reject) => {
+          failedQueue.push({ resolve, reject });
+        }).then(token => {
+          originalRequest.headers.Authorization = `Bearer ${token}`;
+          return api(originalRequest);
+        }).catch(err => {
+          return Promise.reject(err);
+        });
       }
-    } else if (error.code === 'ECONNABORTED') {
-      // Timeout error
-      handleTimeoutError();
-    } else if (error.code === 'ERR_NETWORK') {
-      // Network error
-      handleNetworkError();
-    } else {
-      // Other errors
-      handleGenericError(null, { message: error.message });
+      
+      originalRequest._retry = true;
+      isRefreshing = true;
+      
+      const refreshToken = getRefreshToken();
+      
+      if (!refreshToken) {
+        // No refresh token available, redirect to login
+        clearTokens();
+        window.location.href = '/login';
+        return Promise.reject(error);
+      }
+      
+      try {
+        // Attempt to refresh token
+        const response = await axios.post(
+          `${process.env.REACT_APP_API_URL || 'http://localhost:5000/api'}/auth/refresh-token`,
+          { refreshToken }
+        );
+        
+        const { accessToken, refreshToken: newRefreshToken } = response.data;
+        setTokens(accessToken, newRefreshToken);
+        
+        // Process queued requests
+        processQueue(null, accessToken);
+        
+        // Retry original request
+        originalRequest.headers.Authorization = `Bearer ${accessToken}`;
+        return api(originalRequest);
+        
+      } catch (refreshError) {
+        // Refresh failed, clear tokens and redirect to login
+        processQueue(refreshError, null);
+        clearTokens();
+        toast.error('সেশন শেষ হয়েছে। আবার লগইন করুন।');
+        
+        // Redirect to login if not already there
+        if (window.location.pathname !== '/login') {
+          window.location.href = '/login';
+        }
+        
+        return Promise.reject(refreshError);
+      } finally {
+        isRefreshing = false;
+      }
     }
-
+    
+    // Handle specific status codes
+    switch (status) {
+      case 400:
+        const validationErrors = data.details || [];
+        if (validationErrors.length > 0) {
+          // Show first validation error
+          toast.error(validationErrors[0].msg || data.error);
+        } else {
+          toast.error(data.error || 'অবৈধ তথ্য প্রদান করা হয়েছে।');
+        }
+        break;
+        
+      case 403:
+        toast.error('এই কাজটি করার অনুমতি নেই।');
+        break;
+        
+      case 404:
+        toast.error('তথ্য খুঁজে পাওয়া যায়নি।');
+        break;
+        
+      case 409:
+        toast.error(data.error || 'ডেটা দ্বন্দ্ব।');
+        break;
+        
+      case 429:
+        toast.error('অনেক বেশি অনুরোধ। একটু পরে চেষ্টা করুন।');
+        break;
+        
+      case 500:
+        toast.error('সার্ভার ত্রুটি। পরে আবার চেষ্টা করুন।');
+        break;
+        
+      case 502:
+      case 503:
+      case 504:
+        toast.error('সার্ভার অস্থায়ীভাবে অনুপলব্ধ। পরে আবার চেষ্টা করুন।');
+        break;
+        
+      default:
+        toast.error(data.error || 'একটি অপ্রত্যাশিত ত্রুটি ঘটেছে।');
+    }
+    
     return Promise.reject(error);
   }
 );
 
-// Token refresh functionality
-let isRefreshing = false;
-let failedQueue = [];
-
-const processQueue = (error, token = null) => {
-  failedQueue.forEach(({ resolve, reject }) => {
-    if (error) {
-      reject(error);
-    } else {
-      resolve(token);
-    }
-  });
-
-  failedQueue = [];
-};
-
-const handleUnauthorized = async (originalConfig, error) => {
-  // Avoid infinite loops
-  if (originalConfig.url === '/auth/refresh' || originalConfig._retry) {
-    // Redirect to login
-    redirectToLogin();
-    return Promise.reject(error);
-  }
-
-  if (isRefreshing) {
-    // Queue the request
-    return new Promise((resolve, reject) => {
-      failedQueue.push({ resolve, reject });
-    })
-      .then(() => {
-        return axiosInstance(originalConfig);
-      })
-      .catch((err) => {
-        return Promise.reject(err);
-      });
-  }
-
-  originalConfig._retry = true;
-  isRefreshing = true;
-
-  const refreshToken = localStorage.getItem('refreshToken');
-
-  if (!refreshToken) {
-    redirectToLogin();
-    return Promise.reject(error);
-  }
-
-  try {
-    // Attempt to refresh token
-    const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {
-      refreshToken: refreshToken,
-    });
-
-    const { token: newToken, refreshToken: newRefreshToken } = response.data;
-
-    // Update tokens
-    localStorage.setItem('token', newToken);
-    if (newRefreshToken) {
-      localStorage.setItem('refreshToken', newRefreshToken);
-    }
-
-    // Update authorization header
-    axiosInstance.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
-
-    // Process queued requests
-    processQueue(null, newToken);
-
-    // Retry original request
-    return axiosInstance(originalConfig);
-  } catch (refreshError) {
-    console.error('Token refresh failed:', refreshError);
-    
-    // Process queued requests with error
-    processQueue(refreshError, null);
-    
-    // Clear tokens and redirect to login
-    clearAuthData();
-    redirectToLogin();
-    
-    return Promise.reject(refreshError);
-  } finally {
-    isRefreshing = false;
-  }
-};
-
-// Error handlers
-const handleBadRequest = (data) => {
-  const message = data?.message || 'অবৈধ তথ্য প্রদান করা হয়েছে';
-  toast.error(message);
-};
-
-const handleForbidden = (data) => {
-  const message = data?.message || 'এই কাজটি করার অনুমতি নেই';
-  toast.error(message);
-};
-
-const handleNotFound = (data) => {
-  const message = data?.message || 'তথ্য খুঁজে পাওয়া যায়নি';
-  toast.error(message);
-};
-
-const handleConflict = (data) => {
-  const message = data?.message || 'তথ্যের সংঘর্ষ হয়েছে';
-  toast.error(message);
-};
-
-const handleValidationError = (data) => {
-  if (data?.errors && Array.isArray(data.errors)) {
-    // Show multiple validation errors
-    data.errors.forEach((error) => {
-      toast.error(error.message || error);
-    });
-  } else {
-    const message = data?.message || 'তথ্য যাচাইকরণে সমস্যা হয়েছে';
-    toast.error(message);
-  }
-};
-
-const handleTooManyRequests = (data) => {
-  const message = data?.message || 'অনেক বেশি অনুরোধ। একটু পরে চেষ্টা করুন';
-  toast.error(message);
-};
-
-const handleServerError = (status, data) => {
-  let message = 'সার্ভারে সমস্যা হয়েছে';
+// API helper functions
+export const apiHelpers = {
+  // Authentication
+  login: (credentials) => api.post('/auth/login', credentials),
+  register: (userData) => api.post('/auth/register', userData),
+  refreshToken: (refreshToken) => api.post('/auth/refresh-token', { refreshToken }),
+  logout: () => api.post('/auth/logout'),
+  getProfile: () => api.get('/auth/profile'),
+  updateProfile: (profileData) => api.put('/auth/profile', profileData),
+  changePassword: (passwordData) => api.put('/auth/change-password', passwordData),
+  forgotPassword: (email) => api.post('/auth/forgot-password', { email }),
+  resetPassword: (token, password) => api.post('/auth/reset-password', { resetToken: token, newPassword: password }),
   
-  switch (status) {
-    case 500:
-      message = 'অভ্যন্তরীণ সার্ভার ত্রুটি';
-      break;
-    case 502:
-      message = 'খারাপ গেটওয়ে';
-      break;
-    case 503:
-      message = 'সেবা অনুপলব্ধ';
-      break;
-    case 504:
-      message = 'গেটওয়ে টাইমআউট';
-      break;
-  }
-
-  if (data?.message) {
-    message = data.message;
-  }
-
-  toast.error(message);
-};
-
-const handleTimeoutError = () => {
-  toast.error('অনুরোধ টাইমআউট হয়েছে। আবার চেষ্টা করুন');
-};
-
-const handleNetworkError = () => {
-  toast.error('ইন্টারনেট সংযোগ পরীক্ষা করুন');
-};
-
-const handleGenericError = (status, data) => {
-  const message = data?.message || 'একটি অপ্রত্যাশিত ত্রুটি ঘটেছে';
-  toast.error(message);
-};
-
-// Utility functions
-const redirectToLogin = () => {
-  // Clear auth data
-  clearAuthData();
+  // Donations
+  getDonations: (params) => api.get('/donations', { params }),
+  getDonationById: (id) => api.get(`/donations/${id}`),
+  createDonation: (donationData) => api.post('/donations', donationData),
+  updateDonation: (id, donationData) => api.put(`/donations/${id}`, donationData),
+  deleteDonation: (id) => api.delete(`/donations/${id}`),
+  addToFavorites: (id) => api.post(`/donations/${id}/favorite`),
+  removeFromFavorites: (id) => api.delete(`/donations/${id}/favorite`),
+  getFavorites: (params) => api.get('/donations/favorites', { params }),
+  getTrendingDonations: (params) => api.get('/donations/trending', { params }),
+  getNearbyDonations: (params) => api.get('/donations/nearby', { params }),
+  getRestaurantDonations: (params) => api.get('/donations/restaurant', { params }),
+  updateDonationStatus: (id, statusData) => api.patch(`/donations/${id}/status`, statusData),
+  getDonationStatistics: (params) => api.get('/donations/statistics', { params }),
   
-  // Redirect to login page
-  const currentPath = window.location.pathname;
-  if (currentPath !== '/login') {
-    window.location.href = `/login?redirect=${encodeURIComponent(currentPath)}`;
-  }
-};
-
-const clearAuthData = () => {
-  localStorage.removeItem('token');
-  localStorage.removeItem('refreshToken');
-  localStorage.removeItem('user');
-  delete axiosInstance.defaults.headers.common['Authorization'];
-};
-
-// Helper function to set auth token
-export const setAuthToken = (token) => {
-  if (token) {
-    localStorage.setItem('token', token);
-    axiosInstance.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-  } else {
-    localStorage.removeItem('token');
-    delete axiosInstance.defaults.headers.common['Authorization'];
-  }
-};
-
-// Helper function to check if user is authenticated
-export const isAuthenticated = () => {
-  const token = localStorage.getItem('token');
-  return !!token;
-};
-
-// Helper function to get current user token
-export const getAuthToken = () => {
-  return localStorage.getItem('token');
-};
-
-// Helper function for API calls with retry logic
-export const apiCall = async (config, retries = 3) => {
-  for (let i = 0; i < retries; i++) {
-    try {
-      const response = await axiosInstance(config);
-      return response.data;
-    } catch (error) {
-      if (i === retries - 1) throw error;
-      
-      // Wait before retry (exponential backoff)
-      const delay = Math.pow(2, i) * 1000;
-      await new Promise(resolve => setTimeout(resolve, delay));
-    }
-  }
-};
-
-// Helper function for upload with progress
-export const uploadWithProgress = (config, onProgress) => {
-  return axiosInstance({
-    ...config,
-    onUploadProgress: (progressEvent) => {
-      const percentCompleted = Math.round(
-        (progressEvent.loaded * 100) / progressEvent.total
-      );
-      onProgress && onProgress(percentCompleted);
-    },
-  });
-};
-
-// Helper function for download with progress
-export const downloadWithProgress = (url, filename, onProgress) => {
-  return axiosInstance({
-    method: 'GET',
-    url,
-    responseType: 'blob',
-    onDownloadProgress: (progressEvent) => {
-      const percentCompleted = Math.round(
-        (progressEvent.loaded * 100) / progressEvent.total
-      );
-      onProgress && onProgress(percentCompleted);
-    },
-  }).then((response) => {
-    // Create blob link to download
-    const url = window.URL.createObjectURL(new Blob([response.data]));
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', filename);
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.URL.revokeObjectURL(url);
-  });
-};
-
-// Request queue for offline support
-let requestQueue = [];
-let isOnline = navigator.onLine;
-
-window.addEventListener('online', () => {
-  isOnline = true;
-  // Process queued requests when back online
-  processOfflineQueue();
-});
-
-window.addEventListener('offline', () => {
-  isOnline = false;
-});
-
-const processOfflineQueue = async () => {
-  while (requestQueue.length > 0) {
-    const request = requestQueue.shift();
-    try {
-      await axiosInstance(request.config);
-      request.resolve();
-    } catch (error) {
-      request.reject(error);
-    }
-  }
-};
-
-// Enhanced axios instance with offline support
-export const makeRequest = (config) => {
-  if (!isOnline) {
-    return new Promise((resolve, reject) => {
-      requestQueue.push({ config, resolve, reject });
-      toast.info('অফলাইন অবস্থায় অনুরোধটি সংরক্ষিত হয়েছে');
+  // Users
+  getUsers: (params) => api.get('/users', { params }),
+  getUserById: (id) => api.get(`/users/${id}`),
+  updateUser: (id, userData) => api.put(`/users/${id}`, userData),
+  deleteUser: (id) => api.delete(`/users/${id}`),
+  getUserStatistics: () => api.get('/users/statistics'),
+  toggleUserVerification: (id) => api.patch(`/users/${id}/verify`),
+  toggleUserActiveStatus: (id) => api.patch(`/users/${id}/activate`),
+  getNearbyRestaurants: (params) => api.get('/users/restaurants/nearby', { params }),
+  getTopRatedRestaurants: (params) => api.get('/users/restaurants/top-rated', { params }),
+  searchUsers: (params) => api.get('/users/search', { params }),
+  
+  // Requests
+  getDonationRequests: (params) => api.get('/requests', { params }),
+  createDonationRequest: (requestData) => api.post('/requests', requestData),
+  updateRequestStatus: (id, statusData) => api.patch(`/requests/${id}/status`, statusData),
+  getMyRequests: (params) => api.get('/requests/my-requests', { params }),
+  getPendingRequests: (params) => api.get('/requests/pending', { params }),
+  
+  // Reviews
+  getReviews: (params) => api.get('/reviews', { params }),
+  createReview: (reviewData) => api.post('/reviews', reviewData),
+  updateReview: (id, reviewData) => api.put(`/reviews/${id}`, reviewData),
+  deleteReview: (id) => api.delete(`/reviews/${id}`),
+  addHelpfulVote: (id, helpful) => api.post(`/reviews/${id}/helpful`, { helpful }),
+  flagReview: (id, flagData) => api.post(`/reviews/${id}/flag`, flagData),
+  
+  // File upload
+  uploadFile: (file, onUploadProgress) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    return api.post('/upload', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      onUploadProgress,
     });
-  }
-  
-  return axiosInstance(config);
+  },
 };
 
-export default axiosInstance;
+// Export configured axios instance
+export default api;

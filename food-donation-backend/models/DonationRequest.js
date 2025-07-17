@@ -1,454 +1,301 @@
 const mongoose = require('mongoose');
 
 const donationRequestSchema = new mongoose.Schema({
-  // Reference to donation
-  donationId: {
+  donation: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Donation',
-    required: [true, 'ডোনেশন রেফারেন্স প্রয়োজন'],
-    index: true
+    required: [true, 'Donation reference is required']
   },
-
-  // Charity Information
-  charityId: {
+  requester: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: [true, 'দাতব্য সংস্থার তথ্য প্রয়োজন'],
-    index: true
+    required: [true, 'Requester information is required']
   },
-
-  charityName: {
-    type: String,
-    required: [true, 'দাতব্য সংস্থার নাম প্রয়োজন'],
-    trim: true
+  restaurant: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: [true, 'Restaurant information is required']
   },
-
-  charityEmail: {
+  message: {
     type: String,
-    required: [true, 'দাতব্য সংস্থার ইমেইল প্রয়োজন'],
-    validate: {
-      validator: function(v) {
-        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
-      },
-      message: 'সঠিক ইমেইল ঠিকানা দিন'
-    }
-  },
-
-  // Request Details
-  requestDescription: {
-    type: String,
-    required: [true, 'রিকুয়েস্টের বিবরণ প্রয়োজন'],
+    required: [true, 'Request message is required'],
     trim: true,
-    minlength: [10, 'বিবরণ কমপক্ষে ১০ অক্ষরের হতে হবে'],
-    maxlength: [500, 'বিবরণ সর্বোচ্চ ৫০০ অক্ষরের হতে পারে']
+    minlength: [10, 'Message must be at least 10 characters'],
+    maxlength: [500, 'Message cannot exceed 500 characters']
   },
-
-  // Pickup Time
-  pickupTime: {
-    type: Date,
-    required: [true, 'পিকআপ সময় প্রয়োজন'],
-    validate: {
-      validator: function(v) {
-        return v > new Date();
-      },
-      message: 'পিকআপ সময় ভবিষ্যতে হতে হবে'
+  urgency: {
+    type: String,
+    enum: ['low', 'medium', 'high', 'critical'],
+    default: 'medium'
+  },
+  requestedQuantity: {
+    value: {
+      type: Number,
+      required: [true, 'Requested quantity is required'],
+      min: [1, 'Quantity must be at least 1']
+    },
+    unit: {
+      type: String,
+      required: [true, 'Quantity unit is required']
     }
   },
-
-  // Request Status
   status: {
     type: String,
-    enum: {
-      values: ['pending', 'accepted', 'rejected', 'cancelled', 'completed'],
-      message: 'অবৈধ রিকুয়েস্ট স্ট্যাটাস'
-    },
-    default: 'pending',
-    index: true
+    enum: ['pending', 'approved', 'rejected', 'cancelled', 'completed'],
+    default: 'pending'
   },
-
-  // Response from Restaurant
   responseMessage: {
     type: String,
     trim: true,
-    maxlength: [300, 'প্রতিক্রিয়া সর্বোচ্চ ৩০০ অক্ষরের হতে পারে']
+    maxlength: [300, 'Response message cannot exceed 300 characters']
   },
-
+  pickupDetails: {
+    preferredTime: Date,
+    contactPerson: {
+      name: String,
+      phone: String,
+      email: String
+    },
+    vehicleInfo: String,
+    specialInstructions: String
+  },
+  organizationInfo: {
+    name: String,
+    type: {
+      type: String,
+      enum: ['charity', 'ngo', 'community-center', 'school', 'hospital', 'individual']
+    },
+    registrationNumber: String,
+    servingArea: String,
+    beneficiaryCount: Number,
+    website: String
+  },
+  priorityScore: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 100
+  },
+  coordinates: {
+    type: [Number], // [longitude, latitude]
+    index: '2dsphere'
+  },
+  distance: Number, // Distance from donation location
+  
+  // Response tracking
+  respondedAt: Date,
   respondedBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
-
-  respondedAt: {
-    type: Date
-  },
-
-  // Charity Contact Information
-  contactInfo: {
-    phone: {
-      type: String,
-      validate: {
-        validator: function(v) {
-          if (!v) return true;
-          return /^(\+88)?01[3-9]\d{8}$/.test(v);
-        },
-        message: 'সঠিক মোবাইল নম্বর দিন'
-      }
-    },
-    alternatePhone: {
-      type: String,
-      validate: {
-        validator: function(v) {
-          if (!v) return true;
-          return /^(\+88)?01[3-9]\d{8}$/.test(v);
-        },
-        message: 'সঠিক বিকল্প মোবাইল নম্বর দিন'
-      }
-    },
-    representativeName: {
-      type: String,
-      trim: true,
-      maxlength: [100, 'প্রতিনিধির নাম সর্বোচ্চ ১০০ অক্ষরের হতে পারে']
-    }
-  },
-
-  // Pickup Details
-  pickupAddress: {
+  
+  // Pickup tracking
+  confirmedAt: Date,
+  pickedUpAt: Date,
+  completedAt: Date,
+  
+  // Documentation
+  documents: [{
     type: String,
-    trim: true,
-    maxlength: [200, 'পিকআপ ঠিকানা সর্বোচ্চ ২০০ অক্ষরের হতে পারে']
-  },
-
-  transportArrangement: {
-    type: String,
-    enum: ['own_vehicle', 'hired_transport', 'public_transport', 'walking', 'other'],
-    default: 'own_vehicle'
-  },
-
-  estimatedPickupDuration: {
-    type: Number, // in minutes
-    min: [5, 'পিকআপ সময় কমপক্ষে ৫ মিনিট'],
-    max: [120, 'পিকআপ সময় সর্বোচ্চ ১২০ মিনিট']
-  },
-
-  // Usage Information
-  beneficiaryInfo: {
-    targetGroup: {
-      type: String,
-      enum: [
-        'homeless',
-        'orphans',
-        'elderly',
-        'disabled',
-        'refugees',
-        'students',
-        'poor_families',
-        'disaster_victims',
-        'other'
-      ]
-    },
-    estimatedBeneficiaries: {
-      type: Number,
-      min: [1, 'কমপক্ষে ১ জন উপকারভোগী'],
-      max: [1000, 'সর্বোচ্চ ১০০০ জন উপকারভোগী']
-    },
-    distributionPlan: {
-      type: String,
-      trim: true,
-      maxlength: [300, 'বিতরণ পরিকল্পনা সর্বোচ্চ ৩০০ অক্ষরের হতে পারে']
-    }
-  },
-
-  // Priority and Urgency
-  priority: {
-    type: String,
-    enum: ['low', 'medium', 'high', 'urgent'],
-    default: 'medium'
-  },
-
-  urgencyReason: {
-    type: String,
-    trim: true,
-    maxlength: [200, 'জরুরী কারণ সর্বোচ্চ ২০০ অক্ষরের হতে পারে']
-  },
-
-  // Completion Details
-  pickupConfirmation: {
-    confirmed: {
-      type: Boolean,
-      default: false
-    },
-    confirmedAt: {
-      type: Date
-    },
-    confirmedBy: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User'
-    },
-    confirmationCode: {
-      type: String,
-      length: 6
-    }
-  },
-
-  deliveryConfirmation: {
-    delivered: {
-      type: Boolean,
-      default: false
-    },
-    deliveredAt: {
-      type: Date
-    },
-    beneficiariesFed: {
-      type: Number,
-      min: 0
-    },
-    feedbackMessage: {
-      type: String,
-      trim: true,
-      maxlength: [500, 'প্রতিক্রিয়া সর্বোচ্চ ৫০০ অক্ষরের হতে পারে']
-    }
-  },
-
-  // Cancellation
-  cancellationReason: {
-    type: String,
-    trim: true,
-    maxlength: [300, 'বাতিলের কারণ সর্বোচ্চ ৩০০ অক্ষরের হতে পারে']
-  },
-
-  cancelledBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  },
-
-  cancelledAt: {
-    type: Date
-  },
-
-  // Ratings and Review
-  rating: {
-    charityToRestaurant: {
-      score: {
-        type: Number,
-        min: 1,
-        max: 5
-      },
-      comment: {
-        type: String,
-        trim: true,
-        maxlength: [500, 'মন্তব্য সর্বোচ্চ ৫০০ অক্ষরের হতে পারে']
-      }
-    },
-    restaurantToCharity: {
-      score: {
-        type: Number,
-        min: 1,
-        max: 5
-      },
-      comment: {
-        type: String,
-        trim: true,
-        maxlength: [500, 'মন্তব্য সর্বোচ্চ ৫০০ অক্ষরের হতে পারে']
-      }
-    }
-  },
-
-  // Metadata
-  notificationsSent: [{
-    type: {
-      type: String,
-      enum: ['request_created', 'request_accepted', 'request_rejected', 'pickup_reminder', 'completion_reminder']
-    },
-    sentAt: {
-      type: Date,
-      default: Date.now
-    },
-    recipient: {
-      type: String,
-      enum: ['charity', 'restaurant', 'both']
-    }
+    url: String,
+    uploadedAt: { type: Date, default: Date.now }
   }],
-
-  // Timestamps
-  createdAt: {
-    type: Date,
-    default: Date.now,
-    index: true
+  
+  // Rating and feedback
+  rating: {
+    type: Number,
+    min: 1,
+    max: 5
   },
-
-  updatedAt: {
-    type: Date,
-    default: Date.now
-  }
+  feedback: {
+    type: String,
+    maxlength: [500, 'Feedback cannot exceed 500 characters']
+  },
+  
+  // Admin notes
+  adminNotes: String,
+  flagged: {
+    type: Boolean,
+    default: false
+  },
+  flagReason: String
 }, {
   timestamps: true,
   toJSON: { virtuals: true },
   toObject: { virtuals: true }
 });
 
-// Indexes for better performance
-donationRequestSchema.index({ donationId: 1, charityId: 1 }, { unique: true }); // One request per charity per donation
-donationRequestSchema.index({ charityId: 1, status: 1 });
-donationRequestSchema.index({ status: 1, createdAt: -1 });
-donationRequestSchema.index({ pickupTime: 1 });
-donationRequestSchema.index({ 'pickupConfirmation.confirmed': 1 });
+// Indexes
+donationRequestSchema.index({ donation: 1, requester: 1 }, { unique: true });
+donationRequestSchema.index({ status: 1 });
+donationRequestSchema.index({ restaurant: 1 });
+donationRequestSchema.index({ requester: 1 });
+donationRequestSchema.index({ urgency: 1 });
+donationRequestSchema.index({ priorityScore: -1 });
+donationRequestSchema.index({ createdAt: -1 });
+donationRequestSchema.index({ coordinates: '2dsphere' });
 
-// Virtual properties
-donationRequestSchema.virtual('isActive').get(function() {
-  return ['pending', 'accepted'].includes(this.status) && 
-         new Date() < this.pickupTime;
+// Virtual for time since request
+donationRequestSchema.virtual('timeSinceRequest').get(function() {
+  return Date.now() - this.createdAt.getTime();
 });
 
-donationRequestSchema.virtual('isExpired').get(function() {
-  return new Date() > this.pickupTime && !this.pickupConfirmation.confirmed;
+// Virtual for response time
+donationRequestSchema.virtual('responseTime').get(function() {
+  if (!this.respondedAt) return null;
+  return this.respondedAt.getTime() - this.createdAt.getTime();
 });
 
-donationRequestSchema.virtual('canBeAccepted').get(function() {
-  return this.status === 'pending' && new Date() < this.pickupTime;
+// Virtual for requester type
+donationRequestSchema.virtual('requesterType').get(function() {
+  return this.organizationInfo?.type || 'individual';
 });
 
-donationRequestSchema.virtual('canBeCancelled').get(function() {
-  return ['pending', 'accepted'].includes(this.status) && 
-         new Date() < this.pickupTime;
-});
-
-donationRequestSchema.virtual('timeUntilPickup').get(function() {
-  if (this.isExpired) return 0;
-  return Math.max(0, this.pickupTime.getTime() - new Date().getTime());
+// Pre-save middleware
+donationRequestSchema.pre('save', function(next) {
+  // Calculate priority score based on various factors
+  if (this.isNew || this.isModified('urgency') || this.isModified('organizationInfo')) {
+    this.priorityScore = this.calculatePriorityScore();
+  }
+  next();
 });
 
 // Instance methods
-donationRequestSchema.methods.accept = function(respondedBy, responseMessage = '') {
-  this.status = 'accepted';
-  this.respondedBy = respondedBy;
-  this.respondedAt = new Date();
+donationRequestSchema.methods.calculatePriorityScore = function() {
+  let score = 0;
+  
+  // Urgency score (0-40 points)
+  const urgencyScores = { low: 10, medium: 20, high: 30, critical: 40 };
+  score += urgencyScores[this.urgency] || 20;
+  
+  // Organization type score (0-25 points)
+  const orgTypeScores = {
+    'charity': 25,
+    'ngo': 23,
+    'hospital': 22,
+    'school': 20,
+    'community-center': 18,
+    'individual': 10
+  };
+  score += orgTypeScores[this.organizationInfo?.type] || 10;
+  
+  // Beneficiary count score (0-20 points)
+  if (this.organizationInfo?.beneficiaryCount) {
+    if (this.organizationInfo.beneficiaryCount >= 100) score += 20;
+    else if (this.organizationInfo.beneficiaryCount >= 50) score += 15;
+    else if (this.organizationInfo.beneficiaryCount >= 20) score += 10;
+    else score += 5;
+  }
+  
+  // Distance score (0-15 points) - closer gets higher score
+  if (this.distance !== undefined) {
+    if (this.distance <= 5) score += 15;
+    else if (this.distance <= 10) score += 12;
+    else if (this.distance <= 20) score += 8;
+    else if (this.distance <= 50) score += 5;
+  }
+  
+  return Math.min(score, 100);
+};
+
+donationRequestSchema.methods.approve = function(responseMessage = '', responderId = null) {
+  this.status = 'approved';
   this.responseMessage = responseMessage;
-  this.updatedAt = new Date();
+  this.respondedAt = new Date();
+  if (responderId) this.respondedBy = responderId;
   return this.save();
 };
 
-donationRequestSchema.methods.reject = function(respondedBy, responseMessage = '') {
+donationRequestSchema.methods.reject = function(responseMessage = '', responderId = null) {
   this.status = 'rejected';
-  this.respondedBy = respondedBy;
-  this.respondedAt = new Date();
   this.responseMessage = responseMessage;
-  this.updatedAt = new Date();
+  this.respondedAt = new Date();
+  if (responderId) this.respondedBy = responderId;
   return this.save();
 };
 
-donationRequestSchema.methods.cancel = function(cancelledBy, reason = '') {
+donationRequestSchema.methods.cancel = function() {
   this.status = 'cancelled';
-  this.cancelledBy = cancelledBy;
-  this.cancelledAt = new Date();
-  this.cancellationReason = reason;
-  this.updatedAt = new Date();
   return this.save();
 };
 
-donationRequestSchema.methods.confirmPickup = function(confirmedBy) {
-  this.pickupConfirmation.confirmed = true;
-  this.pickupConfirmation.confirmedAt = new Date();
-  this.pickupConfirmation.confirmedBy = confirmedBy;
-  this.pickupConfirmation.confirmationCode = this.generateConfirmationCode();
-  this.updatedAt = new Date();
+donationRequestSchema.methods.markAsPickedUp = function() {
+  this.pickedUpAt = new Date();
+  if (this.status === 'approved') {
+    this.status = 'completed';
+    this.completedAt = new Date();
+  }
   return this.save();
 };
 
-donationRequestSchema.methods.confirmDelivery = function(beneficiariesFed, feedbackMessage = '') {
-  this.deliveryConfirmation.delivered = true;
-  this.deliveryConfirmation.deliveredAt = new Date();
-  this.deliveryConfirmation.beneficiariesFed = beneficiariesFed;
-  this.deliveryConfirmation.feedbackMessage = feedbackMessage;
-  this.status = 'completed';
-  this.updatedAt = new Date();
-  return this.save();
-};
-
-donationRequestSchema.methods.generateConfirmationCode = function() {
-  return Math.floor(100000 + Math.random() * 900000).toString();
-};
-
-donationRequestSchema.methods.addNotification = function(type, recipient = 'both') {
-  this.notificationsSent.push({
-    type,
-    recipient,
-    sentAt: new Date()
-  });
+donationRequestSchema.methods.addRating = function(rating, feedback = '') {
+  this.rating = rating;
+  this.feedback = feedback;
   return this.save();
 };
 
 // Static methods
-donationRequestSchema.statics.findPendingForDonation = function(donationId) {
+donationRequestSchema.statics.findPendingForRestaurant = function(restaurantId) {
   return this.find({
-    donationId,
+    restaurant: restaurantId,
     status: 'pending'
-  }).populate('charityId', 'name organizationName email phone');
+  })
+  .populate('requester', 'name email phone organizationInfo')
+  .populate('donation', 'title foodType quantity location')
+  .sort({ priorityScore: -1, createdAt: 1 });
 };
 
-donationRequestSchema.statics.findByCharityAndStatus = function(charityId, status) {
-  return this.find({
-    charityId,
-    status
-  }).populate('donationId');
+donationRequestSchema.statics.findByRequester = function(requesterId) {
+  return this.find({ requester: requesterId })
+    .populate('donation', 'title foodType quantity status location restaurant')
+    .populate('restaurant', 'name restaurantInfo.name address')
+    .sort({ createdAt: -1 });
 };
 
-donationRequestSchema.statics.findExpiredRequests = function() {
-  return this.find({
-    status: { $in: ['pending', 'accepted'] },
-    pickupTime: { $lt: new Date() },
-    'pickupConfirmation.confirmed': false
-  });
-};
-
-donationRequestSchema.statics.getStatsForCharity = function(charityId, startDate, endDate) {
+donationRequestSchema.statics.getStatistics = function(filters = {}) {
   return this.aggregate([
-    {
-      $match: {
-        charityId: charityId,
-        createdAt: {
-          $gte: startDate,
-          $lte: endDate
-        }
-      }
-    },
+    { $match: filters },
     {
       $group: {
-        _id: '$status',
-        count: { $sum: 1 },
-        totalBeneficiaries: { $sum: '$deliveryConfirmation.beneficiariesFed' }
+        _id: null,
+        totalRequests: { $sum: 1 },
+        pendingRequests: {
+          $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] }
+        },
+        approvedRequests: {
+          $sum: { $cond: [{ $eq: ['$status', 'approved'] }, 1, 0] }
+        },
+        rejectedRequests: {
+          $sum: { $cond: [{ $eq: ['$status', 'rejected'] }, 1, 0] }
+        },
+        completedRequests: {
+          $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] }
+        },
+        averageResponseTime: {
+          $avg: {
+            $cond: [
+              { $ne: ['$respondedAt', null] },
+              { $subtract: ['$respondedAt', '$createdAt'] },
+              null
+            ]
+          }
+        },
+        averageRating: { $avg: '$rating' }
       }
     }
   ]);
 };
 
-// Middleware
-donationRequestSchema.pre('save', function(next) {
-  this.updatedAt = new Date();
-  
-  // Auto-expire if pickup time has passed and not confirmed
-  if (new Date() > this.pickupTime && 
-      ['pending', 'accepted'].includes(this.status) &&
-      !this.pickupConfirmation.confirmed) {
-    this.status = 'cancelled';
-    this.cancellationReason = 'সময়সীমা অতিক্রম করেছে';
-  }
-  
-  next();
-});
-
-donationRequestSchema.pre('findOneAndUpdate', function(next) {
-  this.set({ updatedAt: new Date() });
-  next();
-});
-
-// Post-save middleware for notifications
-donationRequestSchema.post('save', function(doc) {
-  // Log the request status change
-  console.log(`Donation Request ${doc._id} status changed to: ${doc.status}`);
-  
-  // Here you could trigger email/SMS notifications
-  // Example: if status changed to 'accepted', notify charity
-  // if status changed to 'rejected', notify charity with reason
-});
+donationRequestSchema.statics.findUrgentRequests = function(timeFrame = 60) {
+  const timeAgo = new Date(Date.now() - timeFrame * 60 * 1000);
+  return this.find({
+    urgency: { $in: ['high', 'critical'] },
+    status: 'pending',
+    createdAt: { $gte: timeAgo }
+  })
+  .populate('donation', 'title foodType location restaurant')
+  .populate('requester', 'name organizationInfo')
+  .sort({ priorityScore: -1 });
+};
 
 module.exports = mongoose.model('DonationRequest', donationRequestSchema);
